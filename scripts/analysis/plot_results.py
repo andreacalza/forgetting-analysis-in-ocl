@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 """Aggregate the per-run analysis into the paper's figures.
 
-Reads, for every run under a results root:
+Reads:
   * logs.json      -> shallow forgetting (output accuracy)
   * lp_curve.csv   -> deep forgetting + LP curve over training (compute_lp.py)
   * snr_curve.csv  -> SNR curve over training (compute_snr.py)
 
-and produces (into <results_root>/figures/):
+and produces:
   * lp_curves.png / snr_curves.png     : LP and SNR vs training step, one line per buffer
   * forgetting_vs_buffer.png           : deep vs shallow forgetting vs buffer (replay gap)
   * snr_vs_buffer.png                  : final SNR vs buffer size
-
-Usage:
-    python scripts/analysis/plot_results.py results/
+  
 """
 import argparse
 import csv
@@ -126,9 +124,7 @@ def main():
     snr_ax.legend(); snr_ax.grid(alpha=.3)
     snr_fig.savefig(os.path.join(outdir, "snr_curves.png"), dpi=150, bbox_inches="tight")
 
-    # Buffer sizes span 200-50000 (naive=0): log-x reads far better than linear,
-    # matching the paper's figures. naive (buffer=0) can't sit on a log axis, so
-    # it's drawn as a horizontal reference line instead of a point.
+
     buffers = sorted(b for b in per_buffer if b > 0)
     naive_m = per_buffer.get(0)
 

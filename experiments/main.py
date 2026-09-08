@@ -89,9 +89,8 @@ def main(config):
     else:
         logdir = config.experiment.logdir
 
-    # Periodic checkpointing for offline representation analysis (LP / SNR).
-    # Saves the model every `evaluation.eval_every` global steps — the same
-    # cadence as the anytime evaluation — under <logdir>/checkpoints/.
+    # Periodic checkpointing for offline representation analysis like LP + SNR
+    # Saves the model every `evaluation.eval_every` global steps
     if config.experiment.get("save_checkpoints", False):
         from src.toolkit.checkpoint_plugin import CheckpointEveryNStepsPlugin
         plugins.append(
@@ -112,9 +111,6 @@ def main(config):
     print("Using strategy: ", strategy.__class__.__name__)
     print("With plugins: ", strategy.plugins)
 
-    # benchmark_with_validation_stream is only applied when val_size > 0; with
-    # val_size == 0 (e.g. the multi-head task-incremental setup) the scenario
-    # has no valid_stream, so we fall back to evaluating on the test stream.
     eval_stream = (
         scenario.valid_stream
         if hasattr(scenario, "valid_stream")
@@ -130,8 +126,8 @@ def main(config):
                 experience_size=config.strategy.train_mb_size,
                 access_task_boundaries=config.strategy.use_task_boundaries,
             )
-            # avalanche-lib >= 0.5 exposes the online stream via the streams
-            # dict ("train_online") instead of the old .train_stream attribute.
+            # avalanche-lib >= 0.5 ---_> online stream via the streams
+            # dict ("train_online") instead of the old .train_stream attribute
             train_stream = ocl_scenario.streams["train_online"]
         else:
             train_stream = experience

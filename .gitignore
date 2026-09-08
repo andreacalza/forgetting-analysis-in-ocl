@@ -5,3 +5,14 @@ __pycache__/
 venv/
 *.egg-info/
 .DS_Store
+results/
+results_ep*/
+analysis_*/
+*.pt
+*.ckpt
+*.pth
+events.out.tfevents.*
+logs/
+*.tar.gz
+*.tgz
+*.zip

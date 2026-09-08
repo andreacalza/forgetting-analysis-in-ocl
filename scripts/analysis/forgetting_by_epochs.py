@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-"""Per-task + total forgetting, grouped by train_epochs and strategy, over seeds.
-
-Run it ON THE CLUSTER, pointing it at the root(s) that contain the 1/3/5-epoch
-runs. It auto-discovers every run by walking for logs*.json and reads the sibling
-config.yaml to recover (train_epochs, strategy name, mem_size, seed) — so it does
-NOT depend on how the folders are nested.
-
-    python forgetting_by_epochs.py ~/tesi/ocl_survey/results_1ep \
-                                   ~/tesi/ocl_survey/results_3ep \
-                                   ~/tesi/ocl_survey/results_5ep
-    # or just:  python forgetting_by_epochs.py ~/tesi/ocl_survey
-
-Outputs, next to the current working directory:
-  * forgetting_shallow_<E>ep.csv   (one per epoch setting found)
-  * forgetting_deep_<E>ep.csv      (only if lp_curve*.csv are present)
-and prints the tables to stdout.
-
-Pure standard library (works on the cluster's Python 3.10, no numpy needed).
-"""
 import csv
 import glob
 import json
@@ -28,7 +9,7 @@ import sys
 
 EXP = re.compile(r'Top1_Acc_Exp/eval_phase/test_stream/Task0*\d+/Exp0*(\d+)$')
 
-# strategy display-order helper: Naive first, then ER by ascending buffer.
+
 def strat_key(name):
     if name.lower().startswith("naive") or name.endswith("_0"):
         return (0, 0)

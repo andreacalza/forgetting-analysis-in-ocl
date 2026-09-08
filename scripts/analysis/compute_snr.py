@@ -1,22 +1,17 @@
 #!/usr/bin/env python3
+
 """Signal-to-Noise Ratio (SNR) analysis of feature separability, per the paper.
 
 For two class feature distributions with means mu and covariances Sigma:
 
     SNR(c1, c2) = || mu1 - mu2 ||^2 / Tr(Sigma1 + Sigma2)
 
-(higher = more separable; lower-bounds linear separability). For every periodic
-checkpoint and every trained task we compute, on the task's TEST features
-(population statistics), the average SNR over class pairs, then average over tasks
-to obtain the SNR curve over training.
+(higher = more separable; lower-bounds linear separability).
 
 By default pairs are taken WITHIN each task (the relevant separability for a
-multi-head / TIL model, where each head discriminates its own classes); use
---pairs all for pairs across all past-task classes as well.
+multi-head / TIL model, where each head discriminates its own classes).
 
-Usage:
-    python scripts/analysis/compute_snr.py results/er_split_cifar100_10_2000/0 \
-        [--stride 1] [--device cuda] [--pairs within|all] [--out snr.csv]
+
 """
 import argparse
 import csv
@@ -87,34 +82,57 @@ def main():
         return
 
     out = args.out or os.path.join(args.run_dir, "snr_curve.csv")
+
+    # Resume support: if out already has rows (e.g. a previous run was killed
+    # before finishing), skip steps already computed instead of redoing them.
     rows = []  # (step, task, snr)
+    done_steps = set()
+    if os.path.exists(out):
+        with open(out, newline="") as f:
+            r = csv.reader(f)
+            next(r, None)
+            for s, t, v in r:
+                rows.append((int(s), int(t), float(v)))
+                done_steps.add(int(s))
+        if done_steps:
+            print(f"Resuming: {len(done_steps)} checkpoints already in {out}, skipping them.")
+
+    write_header = not os.path.exists(out)
+    f = open(out, "a", newline="")
+    w = csv.writer(f)
+    if write_header:
+        w.writerow(["step", "task", "snr"])
+
     print(f"{len(checkpoints)} checkpoints, device={args.device}, pairs={args.pairs}")
     for step, path in checkpoints:
+        if step in done_steps:
+            continue
         model, task_ids = load_mt_checkpoint(path, n_cls, train_map, args.device)
         per_task_stats = {}
         for t in task_ids:
             feats, labels = extract_features(model, test_map[t].dataset, args.device)
             per_task_stats[t] = class_stats(feats, labels)
 
+        step_rows = []
         if args.pairs == "within":
             for t in task_ids:
                 st = per_task_stats[t]
                 vals = [snr(*st[a], *st[b]) for a, b in itertools.combinations(st, 2)]
                 if vals:
-                    rows.append((step, t, float(np.mean(vals))))
+                    step_rows.append((step, t, float(np.mean(vals))))
         else:
             allc = {c: s for t in task_ids for c, s in per_task_stats[t].items()}
             vals = [snr(*allc[a], *allc[b]) for a, b in itertools.combinations(allc, 2)]
             if vals:
-                rows.append((step, -1, float(np.mean(vals))))
+                step_rows.append((step, -1, float(np.mean(vals))))
 
-        cur = [v for (s, _, v) in rows if s == step]
+        rows.extend(step_rows)
+        w.writerows(step_rows)
+        f.flush()
+        os.fsync(f.fileno())
+        cur = [v for (_, _, v) in step_rows]
         print(f"step {step:6d} | tasks {task_ids} | mean SNR {np.mean(cur):.4f}")
-
-    with open(out, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["step", "task", "snr"])
-        w.writerows(rows)
+    f.close()
     print(f"\nSNR curve written to {out}")
 
 

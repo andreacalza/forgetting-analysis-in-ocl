@@ -16,9 +16,6 @@ it we report deep forgetting
 where A*_{learned,j} is the probe accuracy right after task j finished training and
 A*_{final,j} is the probe accuracy at the last checkpoint.
 
-Usage:
-    python scripts/analysis/compute_lp.py results/er_split_cifar100_10_2000/0 \
-        [--stride 1] [--device cuda] [--train-per-class 0] [--out lp.csv]
 """
 import argparse
 import csv
@@ -63,7 +60,7 @@ def probe_accuracy(model, train_ds, test_ds, device, C, train_cap):
     Xtr, ytr = Xtr.numpy(), ytr.numpy()
     Xte, yte = Xte.numpy(), yte.numpy()
     scaler = StandardScaler().fit(Xtr)
-    clf = LogisticRegression(C=C, max_iter=1000)
+    clf = LogisticRegression(C=C, max_iter=3000)
     clf.fit(scaler.transform(Xtr), ytr)
     return clf.score(scaler.transform(Xte), yte)
 
@@ -76,35 +73,97 @@ def main():
     ap.add_argument("--C", type=float, default=100.0, help="LogisticRegression C (paper: 100)")
     ap.add_argument("--train-per-class", type=int, default=0,
                     help="cap train samples used to fit the probe (0 = full set)")
-    ap.add_argument("--out", default=None, help="CSV output path (default <run_dir>/lp_curve.csv)")
+    ap.add_argument("--boundaries-only", action="store_true",
+                    help="evaluate ONLY the end-of-task checkpoints plus the final one "
+                         "(~11 instead of 100-500). Deep forgetting reads exactly those "
+                         "two points per task, so the summary number is identical while "
+                         "the cost drops by ~45x. Writes lp_boundaries.csv by default.")
+    ap.add_argument("--out", default=None, help="CSV output path (default <run_dir>/lp_curve.csv, "
+                                                "or lp_boundaries.csv with --boundaries-only)")
     args = ap.parse_args()
 
     benchmark, n_cls = rebuild_benchmark(args.run_dir)
     train_map = task_experience_map(benchmark.train_stream)
     test_map = task_experience_map(benchmark.test_stream)
 
-    checkpoints = list_checkpoints(args.run_dir)[:: args.stride]
-    if not checkpoints:
+    all_ckpts = list_checkpoints(args.run_dir)
+    if not all_ckpts:
         print("No checkpoints found (was the run launched with experiment.save_checkpoints=true?)")
         return
+
+    if args.boundaries_only:
+        # Deep forgetting only ever reads the END of each task's session plus the
+        # final checkpoint. steps_per_task comes from the TRAINING CONFIG, not from
+        # the last checkpoint: the final step is never checkpointed (the plugin fires
+        # inside after_training_iteration), so using max_step would drift every
+        # boundary by one interval.
+        cfg = OmegaConf.load(os.path.join(args.run_dir, "config.yaml"))
+        n_tasks = cfg.benchmark.factory_args.n_experiences
+        n_per_task = len(train_map[min(train_map)].dataset)
+        steps_per_task = (n_per_task // cfg.strategy.train_mb_size) * cfg.strategy.train_epochs
+        checkpoints, seen = [], set()
+        for t in range(n_tasks):
+            target = (t + 1) * steps_per_task
+            cand = [c for c in all_ckpts if c[0] <= target]
+            if cand and cand[-1][0] not in seen:
+                checkpoints.append(cand[-1])
+                seen.add(cand[-1][0])
+        if all_ckpts[-1][0] not in seen:
+            checkpoints.append(all_ckpts[-1])
+        print(f"boundary mode: {len(checkpoints)} checkpoints at steps "
+              f"{[s for s, _ in checkpoints]} (of {len(all_ckpts)} total)")
+    else:
+        checkpoints = all_ckpts[:: args.stride]
+        # The very last checkpoint is what deep forgetting uses as A*_final, but its
+        # index (99/299/499 here) is rarely a multiple of the stride, so plain slicing
+        # would drop it and measure 'final' a few hundred steps early. Always keep it.
+        if args.stride > 1 and all_ckpts[-1] not in checkpoints:
+            checkpoints.append(all_ckpts[-1])
+            print(f"stride {args.stride}: final checkpoint (step {all_ckpts[-1][0]}) "
+                  f"appended so A*_final is the true end of training")
+
     train_cap = args.train_per_class * n_cls if args.train_per_class else 0
 
-    out = args.out or os.path.join(args.run_dir, "lp_curve.csv")
+    default_name = "lp_boundaries.csv" if args.boundaries_only else "lp_curve.csv"
+    out = args.out or os.path.join(args.run_dir, default_name)
+
+    # Resume support: if out already has rows (e.g. a previous run was killed
+    # before finishing), skip steps already computed instead of redoing them.
     rows = []  # (step, task, probe_acc)
+    done_steps = set()
+    if os.path.exists(out):
+        with open(out, newline="") as f:
+            r = csv.reader(f)
+            next(r, None)
+            for s, t, a in r:
+                rows.append((int(s), int(t), float(a)))
+                done_steps.add(int(s))
+        if done_steps:
+            print(f"Resuming: {len(done_steps)} checkpoints already in {out}, skipping them.")
+
+    write_header = not os.path.exists(out)
+    f = open(out, "a", newline="")
+    w = csv.writer(f)
+    if write_header:
+        w.writerow(["step", "task", "probe_acc"])
+
     print(f"{len(checkpoints)} checkpoints, device={args.device}")
     for step, path in checkpoints:
+        if step in done_steps:
+            continue
         model, task_ids = load_mt_checkpoint(path, n_cls, train_map, args.device)
+        step_rows = []
         for t in task_ids:
             acc = probe_accuracy(model, train_map[t].dataset, test_map[t].dataset,
                                  args.device, args.C, train_cap)
-            rows.append((step, t, acc))
-        seen = [a for (s, tt, a) in rows if s == step]
+            step_rows.append((step, t, acc))
+        rows.extend(step_rows)
+        w.writerows(step_rows)
+        f.flush()
+        os.fsync(f.fileno())
+        seen = [a for (s, tt, a) in step_rows]
         print(f"step {step:6d} | tasks {task_ids} | mean probe acc {np.mean(seen):.4f}")
-
-    with open(out, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["step", "task", "probe_acc"])
-        w.writerows(rows)
+    f.close()
     print(f"\nLP curve written to {out}")
 
     # deep forgetting summary: learned (last step where task is the newest) vs final

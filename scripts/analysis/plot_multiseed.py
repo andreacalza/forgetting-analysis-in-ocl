@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Paper-style multi-seed figures for the buffer sweep.
-
+"""
 Reads a results folder laid out as <root>/<Name>/<seed>/{logs*.json,
 lp_curve*.csv, snr_curve*.csv} where <Name> is "Naive" or "ER-<buffer>"
-and <seed> is 0,1,2. Aggregates across seeds (mean ± std) and produces,
-in <root>/figures/:
+and <seed> is 0,1,2. Aggregates across seeds (mean ± std).
+It produces
 
   forgetting_vs_buffer.png   deep vs shallow forgetting (mean ± std, log-x)
   accuracy_gap_vs_buffer.png Top1 vs LP accuracy — the replay efficiency gap
@@ -12,7 +11,6 @@ in <root>/figures/:
   lp_curves.png              LP over training, band = ± std across seeds
   snr_curves.png             SNR over training, band = ± std across seeds
 
-Usage: python scripts/analysis/plot_multiseed.py ~/Desktop/Results
 """
 import csv
 import glob
@@ -64,8 +62,6 @@ def analyse_json(path):
         for i, v in a.items():
             R[j][i] = v
     final = [R[n - 1][i] for i in range(n)]
-    # shallow forgetting, definizione del paper: F = A_jj - A_ij (learned - final),
-    # coerente con il deep forgetting calcolato in read_curve().
     fg = [R[i][i] - R[n - 1][i] for i in range(n - 1)]
     return mean(final), mean(fg)
 
@@ -125,9 +121,6 @@ def main():
     ers = sorted(b for b in data if b > 0)
     nv = data.get(0)
 
-    # Il Naive ha buffer=0, che non sta su un asse log: lo posizioniamo in un punto
-    # fittizio a sinistra del buffer pi\`u piccolo, cos\`i entra nella curva come
-    # primo punto (etichetta "0") e la discesa \`e visibile per intero.
     NAIVE_X = ers[0] * 0.45
 
     def series(key):

@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""Compute final accuracy and forgetting from anytime `logs.json` files.
 
-Each run's `logs.json` (JSON Lines, one dict per training step) contains, at every
-anytime-eval checkpoint, the per-experience test accuracy under keys of the form
-    Top1_Acc_Exp/eval_phase/test_stream/Task00<i>/Exp00<i>
-Only experiences already seen (0..j) are evaluated while training experience j, so
-by grouping checkpoints by the highest experience index present we reconstruct the
-accuracy matrix R[j][i] = accuracy on experience i right after training experience j.
-
-From R we report, per run:
-  * final avg accuracy   = mean_i R[T-1][i]                      (higher = better)
-  * average forgetting   = mean_{i<T-1} ( R[i][i] - R[T-1][i] )   (paper Sec. A.1; lower = better)
-
-Usage:
-    python scripts/analysis/compute_forgetting.py results/                 # auto-discover runs
-    python scripts/analysis/compute_forgetting.py results/er_split_cifar100_10_2000/0 ...
-"""
 import argparse
 import glob
 import json
