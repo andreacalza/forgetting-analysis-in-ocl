@@ -65,8 +65,12 @@ def acc_matrix_last(logs_path):
     return [(learned[i] - final[i]) * 100.0 for i in range(n)]   # per-task pp
 
 
+PROBE_FILE = None  # set by --probe-file; None = first lp_curve*.csv found
+
+
 def deep_from_lp(run_dir):
-    f = glob.glob(os.path.join(run_dir, "lp_curve*.csv"))
+    pat = PROBE_FILE or "lp_curve*.csv"
+    f = sorted(glob.glob(os.path.join(run_dir, pat)))
     if not f:
         return None
     rows = []
@@ -153,7 +157,13 @@ def print_and_save(ep, kind, per_label):
 
 
 def main():
-    roots = sys.argv[1:] or ["."]
+    global PROBE_FILE
+    argv = sys.argv[1:]
+    if "--probe-file" in argv:
+        i = argv.index("--probe-file")
+        PROBE_FILE = argv[i + 1]
+        argv = argv[:i] + argv[i + 2:]
+    roots = argv or ["."]
     data = collect(roots)
     if not data:
         print("No logs*.json found under:", roots); return

@@ -41,6 +41,8 @@ EPOCH_STYLE = {  # colour + marker per epoch setting (CVD-safe trio)
     1: ("#1f77b4", "o"),
     3: ("#d95f02", "s"),
     5: ("#2ca02c", "^"),
+    20: ("#7570b3", "D"),
+    50: ("#e7298a", "v"),
 }
 
 
@@ -467,12 +469,12 @@ def plot_probe_comparison(data, outdir):
     print(f"-> {out}")
 
 
-def plot_curves_by_epoch(data, outdir):
+def plot_curves_by_epoch(data, outdir, lp_curve_key="lp_curve"):
     """LP and SNR trajectories over training, one panel per epoch setting."""
     epochs = sorted({ep for ep, _ in data})
     buffers = sorted({b for _, b in data})
 
-    for key, ylabel, fname in [("lp_curve", "linear-probe accuracy", "epochs_lp_curves.png"),
+    for key, ylabel, fname in [(lp_curve_key, "linear-probe accuracy", "epochs_lp_curves.png"),
                                ("snr_curve", "SNR", "epochs_snr_curves.png")]:
         fig, axes = plt.subplots(1, len(epochs), figsize=(6.2 * len(epochs), 4.4),
                                  sharey=True)
@@ -756,6 +758,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roots", nargs="+", help="result roots, e.g. results_ep1 results_ep3 results_ep5")
     ap.add_argument("--outdir", default="analysis_out")
+    ap.add_argument("--tolerance-steps", type=int, default=0,
+                    help="accept curves ending up to N steps before the last checkpoint "
+                         "(e.g. 200 for a stride-5 SNR curve: last point at 249750 vs 249950)")
+    ap.add_argument("--probe", choices=["auto", "sgd"], default="auto",
+                    help="sgd: every figure uses the SGDClassifier probe "
+                         "(lp_curve_sgd.csv), even where lp_curve.csv exists")
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -764,6 +772,8 @@ def main():
         print("No runs found under:", args.roots)
         return
     ref = reference_final_step(records)
+    if args.tolerance_steps:
+        ref = {ep: max(0, v - args.tolerance_steps) for ep, v in ref.items()}
     data, incomplete = build(records, ref)
     report_incomplete(incomplete, ref)
 
@@ -774,9 +784,9 @@ def main():
     # If the LogisticRegression probe is missing (e.g. still being computed), fall
     # back to the SGD probe: it is the same metric measured with a different
     # classifier, so the figures stay informative instead of showing empty panels.
-    has_lr = any(e["deep"] for e in data.values())
+    has_lr = any(e["deep"] for e in data.values()) and args.probe != "sgd"
     deep_key, deep_lbl = ("deep", "linear probe") if has_lr else ("deepsgd", "linear probe, SGD")
-    lp_key, lp_lbl = ("lp", "LP") if any(e["lp"] for e in data.values()) else ("lpsgd", "LP-SGD")
+    lp_key, lp_lbl = ("lp", "LP") if has_lr and any(e["lp"] for e in data.values()) else ("lpsgd", "LP-SGD")
     if not has_lr:
         print("\n[info] no LogisticRegression probe data -> figures use the SGD probe\n")
 
@@ -799,7 +809,8 @@ def main():
         "epochs_snr.png",
         "SNR vs buffer size, across epoch settings")
     plot_probe_comparison(data, args.outdir)
-    plot_curves_by_epoch(data, args.outdir)
+    plot_curves_by_epoch(data, args.outdir,
+                         "lpsgd_curve" if args.probe == "sgd" else "lp_curve")
     plot_snr_task_boundaries(data, records, args.outdir,
                              probe_label="LogisticRegression")
     plot_snr_task_boundaries(data, records, args.outdir,
@@ -807,7 +818,8 @@ def main():
                              ub_file="upper_bound_curve_sgd.csv",
                              probe_label="SGDClassifier")
     plot_per_task(records, args.outdir, ref)
-    plot_per_task_by_buffer(records, args.outdir, ref)
+    if args.probe != "sgd":
+        plot_per_task_by_buffer(records, args.outdir, ref)
     plot_per_task_by_buffer(records, args.outdir, ref, "lp_curve_sgd.csv",
                             "per_task_by_buffer_sgd.png")
 

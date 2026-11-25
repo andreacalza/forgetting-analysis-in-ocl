@@ -16,3 +16,8 @@ logs/
 *.tar.gz
 *.tgz
 *.zip
+results*/
+logs/
+analysis_out*/
+paper_figs/
+backup_*/

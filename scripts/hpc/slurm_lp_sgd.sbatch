@@ -15,6 +15,9 @@ cd "$SLURM_SUBMIT_DIR"; STRIDE=${STRIDE:-1}
 
 echo "===== $RUN (stride=$STRIDE) ====="
 python scripts/analysis/compute_lp_sgd.py "$RUN" --stride $STRIDE --train-per-class 200 || echo "LP-SGD FAILED: $RUN"
-echo "DONE: $RUN"for d in results_ep1/*/*/ results_ep3/*/*/ results_ep5/*/*/; do
-  sbatch --export=ALL,RUN="${d%/}" scripts/hpc/slurm_lp_sgd.sbatch
-done
+echo "DONE: $RUN"
+
+# Usage, one job per run dir:
+# for d in results_ep1/*/*/ results_ep3/*/*/ results_ep5/*/*/; do
+#   sbatch --export=ALL,RUN="${d%/}" scripts/hpc/slurm_lp_sgd.sbatch
+# done

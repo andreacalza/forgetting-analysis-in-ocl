@@ -20,7 +20,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-EPOCH_STYLE = {1: ("#1f77b4", "o"), 3: ("#d95f02", "s"), 5: ("#2ca02c", "^")}
+EPOCH_STYLE = {1: ("#1f77b4", "o"), 3: ("#d95f02", "s"), 5: ("#2ca02c", "^"),
+               20: ("#7570b3", "D"), 50: ("#e7298a", "v")}
 VIOLET, GREY = "#7b3294", "#888888"
 
 
